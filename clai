@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# Check if query was given
+if [ -z "$1" ]; then
+  echo "Usage: ./curlpt \"Your prompt\""
+  exit 1
+fi
+
+PROMPT="$1"
+
+# Fetch api key
+# Check if api key is in the global variables
+if [ -n "$OPENAI_API_KEY" ]; then
+    API_KEY="$OPENAI_API_KEY"
+# If variable was not found check in openai_key secret file
+elif [ -f ~/.openai_key -a -r ~/.openai_key ]; then
+    API_KEY=$(cat ~/.openai_key)
+else
+    echo "Api key was not found"
+    echo "Create global variable OPENAI_API_KEY"
+    echo "or secret file ~/.openai_key containing your key"
+    exit 1
+fi
+
+# Using payload to safely pass bash variable to JSON with --arg flag
+JSON_PAYLOAD=$(jq -n \
+                  --arg content "$PROMPT" \
+                  --arg model "gpt-3.5-turbo" \
+                  '{ model: $model, messages: [ { role: "user", content: $content } ] }')
+
+# Request and reading response
+RESPONSE=$(curl -s https://api.openai.com/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $API_KEY" \
+  -d "$JSON_PAYLOAD")
+
+# If occurred record error message
+ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error.message // empty')
+
+if [ -n "$ERROR_MSG" ]; then
+    echo "API error occurred:"
+    echo "$ERROR_MSG"
+    exit 1
+else
+    echo -e "\nRESPONSE:"
+    echo "$RESPONSE" | jq -r '.choices[0].message.content'
+fi
+
